@@ -9,3 +9,5 @@ also I replaced code that looks for accesscontrol tags because there is simpler 
 
 # Options:
 $wgAccessControlAllowTextSnippetInSearchResultsForAll (if set to false page content is hidden in search results)
+
+Requires wfLoadExtension('AccessControl'); to be set in LocalSettings.php

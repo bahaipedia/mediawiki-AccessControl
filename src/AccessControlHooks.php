@@ -1,0 +1,425 @@
+<?php
+
+use MediaWiki\MediaWikiServices;
+
+class AccessControlHooks {
+
+	private const TAG_CONTENT_ARRAY = 'AccessControlTagContentArray';
+	private const TABLE = 'access_control';
+	private const C_PAGE = 'ac_page_id';
+	private const C_TAG_CONTENT = 'ac_tag_content';
+
+	private static $cache = [];
+
+	/**
+	 * @see https://www.mediawiki.org/wiki/Manual:Hooks/ParserFirstCallInit
+	 *
+	 * @param Parser $parser
+	 * @throws MWException
+	 */
+	public static function accessControlExtension( Parser $parser ) {
+		/* This the hook function adds the tag <accesscontrol> to the wiki parser */
+		$parser->setHook( 'accesscontrol', [ __CLASS__, 'doControlUserAccess' ] );
+	}
+
+	/**
+	 * Function called by accessControlExtension
+	 * @param string $input
+	 * @param string[] $args
+	 * @param Parser $parser
+	 * @param PPFrame $frame
+	 * @return string
+	 */
+	public static function doControlUserAccess( string $input, array $args, Parser $parser, PPFrame $frame ) {
+		$parserOutput = $parser->getOutput();
+		$data = $parserOutput->getExtensionData( self::TAG_CONTENT_ARRAY ) ?: [];
+		$data[] = $input;
+		$parserOutput->setExtensionData( self::TAG_CONTENT_ARRAY, $data );
+
+		return self::displayGroups();
+	}
+
+	/**
+	 * @param User $user
+	 * @param array|null $tagContentArray
+	 * @param string $actionName
+	 * @return Status
+	 * @throws MWException
+	 */
+	private static function canUserDoAction( User $user, ?array $tagContentArray, string $actionName ): Status {
+		if ( !$tagContentArray ) {
+			// No restrictions
+			return Status::newGood( true );
+		}
+
+		// Return true by default
+		$return = Status::newGood( true );
+		$userName = $user->getName();
+		$fullAccess = true;
+		$readAccess = true;
+		foreach ( $tagContentArray as $tagContent ) {
+			$status = self::accessControl( $tagContent );
+			if ( !$status->isGood() ) {
+				$return->merge( $status );
+			}
+			$users = $status->getValue();
+			$fullAccess = $fullAccess && $users[0] && in_array( $userName, $users[0], true );
+			$readAccess = $fullAccess || ( $readAccess && $users[1] && in_array( $userName, $users[1], true ) );
+		}
+
+		if ( self::getConfigValue( 'AdminCanReadAll' ) &&
+			in_array( 'sysop', $user->getGroups(), true )
+		) {
+			// Admin can read all
+			return $return;
+		}
+
+		if ( $fullAccess ) {
+			// User has full access
+			return $return;
+		}
+
+		if ( $readAccess ) {
+			// User has read access
+			if ( $actionName === 'view' || $actionName === 'read' ) {
+				// This is view action
+				return $return;
+			}
+		}
+
+		// Return false
+		$return->setResult( true, false );
+		return $return;
+	}
+
+	/**
+	 * Checks page restriction
+	 * @param OutputPage $out
+	 * @param ParserOutput $parserOutput
+	 * @throws MWException
+	 */
+	public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $parserOutput ) {
+		$tagContentArray = $parserOutput->getExtensionData( self::TAG_CONTENT_ARRAY );
+		$user = $out->getUser();
+		$context = $out->getContext();
+		$actionName = Action::getActionName( $context );
+
+		$status = self::canUserDoAction( $user, $tagContentArray, $actionName );
+		if ( !$status->getValue() ) {
+			// User has no access
+			$parserOutput->setText( wfMessage( 'accesscontrol-info-box' )->text() );
+		}
+		if ( !$status->isGood() ) {
+			$text = $parserOutput->getRawText();
+			$text = Html::rawElement( 'div', [ 'class' => 'error' ], $status->getHTML() ) . "\n$text";
+			$parserOutput->setText( $text );
+		}
+	}
+
+	/**
+	 * @param string $tagContent
+	 * @return Status
+	 * @throws MWException
+	 */
+	private static function accessControl( string $tagContent ): Status {
+		$accessGroup = [ [], [] ];
+		$listAccessList = explode( ',', $tagContent );
+		$return = Status::newGood();
+		foreach ( $listAccessList as $accessList ) {
+			if ( strpos( $accessList, "(ro)" ) !== false ) {
+				$accessList = trim( str_replace( "(ro)", "", $accessList ) );
+				$status = self::makeGroupArray( $accessList );
+				if ( !$status->isGood() ) {
+					$return->merge( $status );
+				}
+				if ( $status->isOK() ) {
+					$group = $status->getValue();
+					$accessGroup[1] = array_merge( $accessGroup[1], $group[0] );
+					$accessGroup[1] = array_merge( $accessGroup[1], $group[1] );
+				}
+			} else {
+				$accessList = trim( $accessList );
+				$status = self::makeGroupArray( $accessList );
+				if ( !$status->isGood() ) {
+					$return->merge( $status );
+				}
+				if ( $status->isOK() ) {
+					$group = $status->getValue();
+					$accessGroup[0] = array_merge( $accessGroup[0], $group[0] );
+					$accessGroup[1] = array_merge( $accessGroup[1], $group[1] );
+				}
+			}
+		}
+
+		$return->setResult( true, $accessGroup );
+		return $return;
+	}
+
+	/**
+	 * Function returns array with two lists.
+	 * First is list full access users.
+	 * Second is list readonly users.
+	 * @param string $accessList
+	 * @return Status
+	 * @throws MWException
+	 */
+	private static function makeGroupArray( string $accessList ): Status {
+		static $cache = [];
+
+		if ( isset( $cache[$accessList] ) ) {
+			return $cache[$accessList];
+		}
+
+		$usersWrite = [];
+		$usersReadonly = [];
+		$status = self::getUsersFromPages( $accessList );
+		if ( !$status->isOK() ) {
+			return $status;
+		}
+
+		$users = $status->getValue();
+		foreach ( array_keys( $users ) as $user ) {
+			switch ( $users[$user] ) {
+				case 'read':
+					$usersReadonly[] = $user;
+					break;
+				case 'edit':
+					$usersWrite[] = $user;
+					break;
+			}
+		}
+
+		$return = [ $usersWrite, $usersReadonly ];
+		$status->setResult( true, $return );
+		$cache[$accessList] = $status;
+		return $status;
+	}
+
+	/**
+	 * Shows info about a protection this the page at the accesscontrol place
+	 * @return string
+	 */
+	private static function displayGroups() {
+		$text = wfMessage( 'accesscontrol-info' )->text();
+		$attribs = [
+			'id' => 'accesscontrol',
+			'style' => 'text-align:center; color:#BA0000; font-size:8pt;',
+		];
+		return Html::element( 'p', $attribs, $text );
+	}
+
+	/**
+	 * @param string $group
+	 * @return Status
+	 * @throws MWException
+	 */
+	private static function getUsersFromPages( string $group ): Status {
+		/* Extracts the allowed users from the userspace access list */
+		$allow = [];
+		try {
+			$gt = Title::newFromTextThrow( $group );
+		} catch ( MalformedTitleException $e ) {
+			$status = Status::newFatal( $e->getMessageObject() );
+			$status->error( 'accesscontrol-wrong-group-title', $group );
+			return $status;
+		}
+		if ( !$gt->exists() ) {
+			return Status::newFatal( 'accesscontrol-group-does-not-exist', $gt->getFullText() );
+		}
+		// Article::fetchContent() is deprecated.
+		// Replaced by WikiPage::getContent()
+		$groupPage = WikiPage::factory( $gt );
+		$allowedUsers = ContentHandler::getContentText( $groupPage->getContent() );
+		$groupPage = null;
+		$usersAccess = explode( "\n", $allowedUsers );
+		foreach ( $usersAccess as $userEntry ) {
+			$userItem = trim( $userEntry );
+			if ( $userItem && $userItem[0] === '*' ) {
+				$user = trim( str_replace( '*', '', $userItem ) );
+				if ( strpos( $userItem, '(ro)' ) === false ) {
+					$allow[$user] = 'edit';
+				} else {
+					$user = trim( str_replace( '(ro)', "", $user ) );
+					$allow[$user] = 'read';
+				}
+			}
+		}
+		return Status::newGood( $allow );
+	}
+
+	/**
+	 * @see https://www.mediawiki.org/wiki/Manual:Hooks/userCan
+	 *
+	 * @param Title $title
+	 * @param User $user
+	 * @param string $action
+	 * @return bool
+	 * @throws MWException
+	 */
+	public static function onUserCan( Title $title, User $user, string $action ) {
+		static $requestChecked = false, $allowReadForAllInSearchResult = false;
+
+		if ( !$requestChecked ) {
+			// We need to check this once only
+			$requestChecked = true;
+
+			$context = RequestContext::getMain();
+			$requestTitle = $context->getTitle();
+			if ( $requestTitle ) {
+				$requestUser = $context->getUser();
+				$tagContentArray = self::getRestrictionForTitle( $requestTitle, $requestUser );
+				if ( !self::canUserDoAction( $user, $tagContentArray, 'fullAccess' )->getValue() ) {
+					// User has no full access
+					global $wgActions;
+					$wgActions['edit'] = false;
+					$wgActions['history'] = false;
+					$wgActions['submit'] = false;
+					$wgActions['info'] = false;
+					$wgActions['raw'] = false;
+					$wgActions['delete'] = false;
+					$wgActions['revert'] = false;
+					$wgActions['revisiondelete'] = false;
+					$wgActions['rollback'] = false;
+					$wgActions['markpatrolled'] = false;
+					if ( !self::canUserDoAction( $user, $tagContentArray, 'read' )->getValue() ) {
+						// User has no read access
+						$wgActions['view'] = false;
+					}
+				}
+
+				// Check for search results on SpecialSearch page...
+				if ( $action === 'read' &&
+					$requestTitle->isSpecial( 'Search' ) &&
+					self::getConfigValue( 'AccessControlAllowTextSnippetInSearchResultsForAll' )
+				) {
+					// Allow to show text snippet of protected pages in search result even user has no rights to read
+					$allowReadForAllInSearchResult = true;
+				}
+			}
+		}
+
+		if ( $action === 'read' && $allowReadForAllInSearchResult ) {
+			// We are on Special:Search page, and read text snipped allowed for all
+			return true;
+		}
+
+		$tagContentArray = self::getRestrictionForTitle( $title, $user );
+		return self::canUserDoAction( $user, $tagContentArray, $action )->getValue();
+	}
+
+	/**
+	 * @param LinksUpdate $linksUpdate
+	 */
+	public static function onLinksUpdate( LinksUpdate $linksUpdate ) {
+		$parserOutput = $linksUpdate->getParserOutput();
+		$title = $linksUpdate->getTitle();
+
+		$pageId = $title->getArticleID();
+		$tagContentArray = $parserOutput->getExtensionData( self::TAG_CONTENT_ARRAY );
+		self::updateRestrictionInDatabase( $pageId, $tagContentArray );
+	}
+
+	/**
+	 * @param Title $title
+	 * @param User $user
+	 * @return false|array|null
+	 */
+	private static function getRestrictionForTitle( Title $title, User $user ) {
+		$pageId = $title->getArticleID();
+		if ( !$pageId ) {
+			return null;
+		}
+
+		if ( array_key_exists( $pageId, self::$cache ) ) {
+			return self::$cache[$pageId];
+		}
+
+		$dbr = wfGetDB( DB_REPLICA );
+		try {
+			$row = $dbr->selectRow(
+				self::TABLE,
+				'*',
+				[ self::C_PAGE => $title->getArticleID() ],
+				__METHOD__
+			);
+		} catch ( Exception $e ) {
+			MWDebug::warning( $e->getMessage() );
+			$row = false;
+		}
+
+		if ( !$row ) {
+			// No record in the database
+			$page = new Article( $title );
+			$return = $page->getParserOutput( null, $user )->getExtensionData( self::TAG_CONTENT_ARRAY );
+		} else {
+			$tagContent = ( (array)$row )[self::C_TAG_CONTENT];
+			$return = $tagContent ? FormatJson::decode( $tagContent, true ) : null;
+		}
+		self::$cache[$pageId] = $return;
+		return $return;
+	}
+
+	/**
+	 * @param int $pageId
+	 * @param array|null $tagContentArray
+	 */
+	private static function updateRestrictionInDatabase( int $pageId, ?array $tagContentArray ) {
+		if ( !$pageId ) {
+			return;
+		}
+
+		if ( array_key_exists( $pageId, self::$cache ) &&
+			self::$cache[$pageId] === $tagContentArray
+		) {
+			// No changes
+			return;
+		}
+		self::$cache[$pageId] = $tagContentArray;
+
+		if ( $tagContentArray !== null ) {
+			$tagContentArray = FormatJson::encode( $tagContentArray );
+		}
+
+		$db = wfGetDB( DB_MASTER );
+		$index = [
+			self::C_PAGE => $pageId,
+		];
+		$row = [
+			self::C_PAGE => $pageId,
+			self::C_TAG_CONTENT => $tagContentArray,
+		];
+		try {
+			$db->upsert(
+				self::TABLE,
+				[ $index + $row ],
+				[ self::C_PAGE ],
+				$row,
+				__METHOD__
+			);
+		} catch ( Exception $e ) {
+			MWDebug::warning( $e->getMessage() );
+		}
+	}
+
+	/**
+	 * This is attached to the MediaWiki 'LoadExtensionSchemaUpdates' hook.
+	 * Fired when MediaWiki is updated to allow extensions to update the database
+	 * @param DatabaseUpdater $updater
+	 */
+	public static function onLoadExtensionSchemaUpdates( DatabaseUpdater $updater ) {
+		$updater->addExtensionTable( self::TABLE, __DIR__ . '/../db_patches/access_control.sql' );
+	}
+
+	/**
+	 * @param string $name
+	 * @return mixed
+	 */
+	private static function getConfigValue( string $name ) {
+		static $cache = [];
+
+		if ( !isset( $cache[$name] ) ) {
+			$cache[$name] = MediaWikiServices::getInstance()->getMainConfig()->get( $name );
+		}
+		return $cache[$name];
+	}
+}

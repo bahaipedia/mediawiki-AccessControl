@@ -1,0 +1,12 @@
+{
+	"@metadata": {
+		"authors": [
+			"Beta16"
+		]
+	},
+	"accesscontrol-desc": "{{desc|what=extension|name=AccessControl|url=https://www.mediawiki.org/wiki/Extension:AccessControl}}",
+	"accesscontrol-info": "This message described that the current page your on is protected.",
+	"accesscontrol-info-box": "This message describes that your current mediawiki uses the AccessControl extension to allow restrict access to the site.",
+	"accesscontrol-wrong-group-title": "An error message shown when user provided a group name that cannot be uses as a title.\n\nParameters:\n* the group name",
+	"accesscontrol-group-does-not-exist": "An error message shown when non-existing title used as a group parameter inside the the <accesscontrol> tag.\n\nParameters:\n* the provided title"
+}

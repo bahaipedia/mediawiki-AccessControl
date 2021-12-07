@@ -1,0 +1,40 @@
+{
+	"name": "AccessControl",
+	"version": "5.0",
+	"author": [
+		"[https://www.mediawiki.org/wiki/m:User:Want Aleš Kapica]"
+	],
+	"type": "parserhook",
+	"url": "https://www.mediawiki.org/wiki/Extension:AccessControl",
+	"descriptionmsg": "accesscontrol-desc",
+	"license-name": "GPL-2.0-or-later",
+	"requires": {
+		"MediaWiki": ">= 1.32.0"
+	},
+	"AutoloadClasses": {
+		"AccessControlHooks": "src/AccessControlHooks.php"
+	},
+	"MessagesDirs": {
+		"AccessControl": [
+			"i18n"
+		]
+	},
+	"config": {
+		"AdminCanReadAll": {
+			"value": true,
+			"description": "Sysop users can read all restricted pages"
+		},
+		"AccessControlAllowTextSnippetInSearchResultsForAll": {
+			"value": false,
+			"description": "Allow to show text snippet of protected pages in search result even user has no rights to read"
+		}
+	},
+	"Hooks": {
+		"ParserFirstCallInit": "AccessControlHooks::accessControlExtension",
+		"OutputPageParserOutput": "AccessControlHooks::onOutputPageParserOutput",
+		"userCan": "AccessControlHooks::onUserCan",
+		"LinksUpdate": "AccessControlHooks::onLinksUpdate",
+		"LoadExtensionSchemaUpdates": "AccessControlHooks::onLoadExtensionSchemaUpdates"
+	},
+	"manifest_version": 2
+}

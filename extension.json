@@ -30,9 +30,9 @@
 		}
 	},
 	"Hooks": {
+		"getUserPermissionsErrors": "AccessControlHooks::onGetUserPermissionsErrors",
 		"ParserFirstCallInit": "AccessControlHooks::accessControlExtension",
 		"OutputPageParserOutput": "AccessControlHooks::onOutputPageParserOutput",
-		"userCan": "AccessControlHooks::onUserCan",
 		"LinksUpdate": "AccessControlHooks::onLinksUpdate",
 		"LoadExtensionSchemaUpdates": "AccessControlHooks::onLoadExtensionSchemaUpdates"
 	},

@@ -248,15 +248,16 @@ class AccessControlHooks {
 	}
 
 	/**
-	 * @see https://www.mediawiki.org/wiki/Manual:Hooks/userCan
+	 * @see https://www.mediawiki.org/wiki/Manual:Hooks/getUserPermissionsErrors
 	 *
 	 * @param Title $title
 	 * @param User $user
 	 * @param string $action
+	 * @param string &$result
 	 * @return bool
 	 * @throws MWException
 	 */
-	public static function onUserCan( Title $title, User $user, string $action ) {
+	public static function onGetUserPermissionsErrors( $title, $user, $action, &$result ) {
 		static $requestChecked = false, $allowReadForAllInSearchResult = false;
 
 		if ( !$requestChecked ) {
@@ -304,7 +305,12 @@ class AccessControlHooks {
 		}
 
 		$tagContentArray = self::getRestrictionForTitle( $title, $user );
-		return self::canUserDoAction( $user, $tagContentArray, $action )->getValue();
+		$isAllowed = self::canUserDoAction( $user, $tagContentArray, $action )->getValue();
+		if ( !$isAllowed ) {
+			$result = 'accesscontrol-info-box';
+		}
+
+		return $isAllowed;
 	}
 
 	/**

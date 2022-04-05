@@ -5,6 +5,6 @@
 	"accesscontrol-desc": "Enables group access restriction on a page by user basis",
 	"accesscontrol-info": "Please respect the copyright holder and do not redistribute content from these pages.",
 	"accesscontrol-info-box": "This page contains copyright protected text. Temporary access may be avaiable, please contact us to get in touch.",
-	"accesscontrol-wrong-group-title": "Title '$1' provided as a group for the Access Control extension is wrong.",
-	"accesscontrol-group-does-not-exist": "Title [[$1]] provided as a group for the Access Control extension does not exists."
+	"accesscontrol-wrong-group-title": "Title '$1' is wrong.",
+	"accesscontrol-group-does-not-exist": "Title [[$1]] does not exist. Create and then blank the page."
 }

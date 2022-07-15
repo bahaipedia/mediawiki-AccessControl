@@ -64,9 +64,16 @@ class AccessControlHooks {
 				$return->merge( $status );
 			}
 			$users = $status->getValue();
-			$fullAccess = $fullAccess && $users[0] && in_array( $userName, $users[0], true );
-			$readAccess = $fullAccess || ( $readAccess && $users[1] && in_array( $userName, $users[1], true ) );
-			$searchAccess = $readAccess || ( $searchAccess && $users[2] && in_array( $userName, $users[2], true ) );
+			$fullAccess = $fullAccess && $users[0] &&
+				( in_array( $userName, $users[0], true ) || $userName !== '*' && in_array( '*', $users[0], true ) );
+			$readAccess = $fullAccess ||
+				( $readAccess && $users[1] &&
+					( in_array( $userName, $users[1], true ) || $userName !== '*' && in_array( '*', $users[1], true ) )
+				);
+			$searchAccess = $readAccess ||
+				( $searchAccess && $users[2] &&
+					( in_array( $userName, $users[2], true ) || $userName !== '*' && in_array( '*', $users[2], true ) )
+				);
 		}
 
 		if ( self::getConfigValue( 'AdminCanReadAll' ) &&

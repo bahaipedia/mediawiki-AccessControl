@@ -259,7 +259,7 @@ class AccessControlHooks {
 		foreach ( $usersAccess as $userEntry ) {
 			$userItem = trim( $userEntry );
 			if ( $userItem && $userItem[0] === '*' ) {
-				$user = trim( str_replace( '*', '', $userItem ) );
+				$user = trim( mb_substr( $userItem, 1 ) );
 				if ( strpos( $userItem, '(search)' ) !== false ) {
 					$user = trim( str_replace( '(search)', "", $user ) );
 					$allow[$user] = 'search';
@@ -312,18 +312,16 @@ class AccessControlHooks {
 					if ( !self::canUserDoAction( $user, $tagContentArray, 'read' )->getValue() ) {
 						// User has no read access
 						$wgActions['view'] = false;
-
-						// Check for search results on SpecialSearch page...
-						if ( $action === 'read' &&
-							$requestTitle->isSpecial( 'Search' ) &&
-							( self::getConfigValue( 'AccessControlAllowTextSnippetInSearchResultsForAll' ) ||
-								self::canUserDoAction( $user, $tagContentArray, 'search' )->getValue()
-							)
-						) {
-							// Allow to show text snippet of protected pages in search result even user has no rights to read
-							$allowReadForAllInSearchResult = true;
-						}
 					}
+				}
+
+				// Check for search results on SpecialSearch page...
+				if ( $action === 'read' &&
+					$requestTitle->isSpecial( 'Search' ) &&
+					self::getConfigValue( 'AccessControlAllowTextSnippetInSearchResultsForAll' )
+				) {
+					// Allow to show text snippet of protected pages in search result even user has no rights to read
+					$allowReadForAllInSearchResult = true;
 				}
 			}
 		}
@@ -331,6 +329,9 @@ class AccessControlHooks {
 		if ( $action === 'read' && $allowReadForAllInSearchResult ) {
 			// We are on Special:Search page, and read text snipped allowed for all
 			return true;
+		}
+		if (  $action === 'read' && RequestContext::getMain()->getTitle()->isSpecial( 'Search' ) ) {
+			$action = 'search';
 		}
 
 		$tagContentArray = self::getRestrictionForTitle( $title, $user );

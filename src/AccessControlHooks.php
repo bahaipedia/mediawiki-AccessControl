@@ -33,7 +33,10 @@ class AccessControlHooks {
 	public static function doControlUserAccess( string $input, array $args, Parser $parser, PPFrame $frame ) {
 		$parserOutput = $parser->getOutput();
 		$data = $parserOutput->getExtensionData( self::TAG_CONTENT_ARRAY ) ?: [];
-		$data[] = $input;
+		$inputArray = explode( ',', $input );
+		$inputArray = array_map( 'trim', $inputArray );
+		$data = array_merge( $data, $inputArray );
+		$data = array_unique( $data );
 		$parserOutput->setExtensionData( self::TAG_CONTENT_ARRAY, $data );
 
 		return self::displayGroups();
@@ -47,13 +50,42 @@ class AccessControlHooks {
 	 * @throws MWException
 	 */
 	private static function canUserDoAction( User $user, ?array $tagContentArray, string $actionName ): Status {
-		if ( !$tagContentArray ) {
-			// No restrictions
-			return Status::newGood( true );
+		static $allowReadForAllInSearchResult = null;
+
+		if ( $allowReadForAllInSearchResult === null ) {
+			$allowReadForAllInSearchResult = (bool)self::getConfigValue( 'AccessControlAllowTextSnippetInSearchResultsForAll' );
 		}
 
 		// Return true by default
 		$return = Status::newGood( true );
+
+		if ( $tagContentArray ) {
+			// For backward compatibility
+			if ( count( $tagContentArray ) === 1 ) {
+				$tagContentArray = explode( ',', $tagContentArray[0] );
+				$tagContentArray = array_map( 'trim', $tagContentArray );
+			}
+
+			$i = array_search( '(nosearch)', $tagContentArray, true );
+			if ( $i !== false ) {
+				array_splice( $tagContentArray, $i, 1 );
+			} elseif ( $actionName === 'search' && $allowReadForAllInSearchResult ) {
+				return $return;
+			}
+		}
+
+		if ( !$tagContentArray ) {
+			// No restrictions
+			return $return;
+		}
+
+		if ( self::getConfigValue( 'AdminCanReadAll' ) &&
+			in_array( 'sysop', $user->getGroups(), true )
+		) {
+			// Admin can read all
+			return $return;
+		}
+
 		$userName = $user->isAnon() ? '*' : $user->getName();
 		$fullAccess = true;
 		$readAccess = true;
@@ -74,13 +106,6 @@ class AccessControlHooks {
 				( $searchAccess && $users[2] &&
 					( in_array( $userName, $users[2], true ) || $userName !== '*' && in_array( '*', $users[2], true ) )
 				);
-		}
-
-		if ( self::getConfigValue( 'AdminCanReadAll' ) &&
-			in_array( 'sysop', $user->getGroups(), true )
-		) {
-			// Admin can read all
-			return $return;
 		}
 
 		if ( $fullAccess ) {
@@ -130,51 +155,48 @@ class AccessControlHooks {
 	}
 
 	/**
-	 * @param string $tagContent
+	 * @param string $accessList
 	 * @return Status
 	 * @throws MWException
 	 */
-	private static function accessControl( string $tagContent ): Status {
+	private static function accessControl( string $accessList ): Status {
 		$accessGroup = [ [], [], [] ];
-		$listAccessList = explode( ',', $tagContent );
 		$return = Status::newGood();
-		foreach ( $listAccessList as $accessList ) {
-			if ( strpos( $accessList, "(search)" ) !== false ) {
-				$accessList = trim( str_replace( "(search)", "", $accessList ) );
-				$status = self::makeGroupArray( $accessList );
-				if ( !$status->isGood() ) {
-					$return->merge( $status );
-				}
-				if ( $status->isOK() ) {
-					$group = $status->getValue();
-					$accessGroup[2] = array_merge( $accessGroup[2], $group[0] );
-					$accessGroup[2] = array_merge( $accessGroup[2], $group[1] );
-					$accessGroup[2] = array_merge( $accessGroup[2], $group[2] );
-				}
-			} elseif ( strpos( $accessList, "(ro)" ) !== false ) {
-				$accessList = trim( str_replace( "(ro)", "", $accessList ) );
-				$status = self::makeGroupArray( $accessList );
-				if ( !$status->isGood() ) {
-					$return->merge( $status );
-				}
-				if ( $status->isOK() ) {
-					$group = $status->getValue();
-					$accessGroup[1] = array_merge( $accessGroup[1], $group[0] );
-					$accessGroup[1] = array_merge( $accessGroup[1], $group[1] );
-					$accessGroup[2] = array_merge( $accessGroup[2], $group[2] );
-				}
-			} else {
-				$accessList = trim( $accessList );
-				$status = self::makeGroupArray( $accessList );
-				if ( !$status->isGood() ) {
-					$return->merge( $status );
-				}
-				if ( $status->isOK() ) {
-					$group = $status->getValue();
-					$accessGroup[0] = array_merge( $accessGroup[0], $group[0] );
-					$accessGroup[1] = array_merge( $accessGroup[1], $group[1] );
-					$accessGroup[2] = array_merge( $accessGroup[2], $group[2] );
-				}
+		if ( strpos( $accessList, '(search)' ) !== false ) {
+			$accessList = trim( str_replace( '(search)', '', $accessList ) );
+			$status = self::makeGroupArray( $accessList );
+			if ( !$status->isGood() ) {
+				$return->merge( $status );
+			}
+			if ( $status->isOK() ) {
+				$group = $status->getValue();
+				$accessGroup[2] = array_merge( $accessGroup[2], $group[0] );
+				$accessGroup[2] = array_merge( $accessGroup[2], $group[1] );
+				$accessGroup[2] = array_merge( $accessGroup[2], $group[2] );
+			}
+		} elseif ( strpos( $accessList, '(ro)' ) !== false ) {
+			$accessList = trim( str_replace( '(ro)', '', $accessList ) );
+			$status = self::makeGroupArray( $accessList );
+			if ( !$status->isGood() ) {
+				$return->merge( $status );
+			}
+			if ( $status->isOK() ) {
+				$group = $status->getValue();
+				$accessGroup[1] = array_merge( $accessGroup[1], $group[0] );
+				$accessGroup[1] = array_merge( $accessGroup[1], $group[1] );
+				$accessGroup[2] = array_merge( $accessGroup[2], $group[2] );
+			}
+		} else {
+			$accessList = trim( $accessList );
+			$status = self::makeGroupArray( $accessList );
+			if ( !$status->isGood() ) {
+				$return->merge( $status );
+			}
+			if ( $status->isOK() ) {
+				$group = $status->getValue();
+				$accessGroup[0] = array_merge( $accessGroup[0], $group[0] );
+				$accessGroup[1] = array_merge( $accessGroup[1], $group[1] );
+				$accessGroup[2] = array_merge( $accessGroup[2], $group[2] );
 			}
 		}
 
@@ -292,7 +314,7 @@ class AccessControlHooks {
 	 * @throws MWException
 	 */
 	public static function onGetUserPermissionsErrors( $title, $user, $action, &$result ) {
-		static $requestChecked = false, $allowReadForAllInSearchResult = false;
+		static $requestChecked = false;
 
 		if ( !$requestChecked ) {
 			// We need to check this once only
@@ -321,23 +343,10 @@ class AccessControlHooks {
 						$wgActions['view'] = false;
 					}
 				}
-
-				// Check for search results on SpecialSearch page...
-				if ( $action === 'read' &&
-					$requestTitle->isSpecial( 'Search' ) &&
-					self::getConfigValue( 'AccessControlAllowTextSnippetInSearchResultsForAll' )
-				) {
-					// Allow to show text snippet of protected pages in search result even user has no rights to read
-					$allowReadForAllInSearchResult = true;
-				}
 			}
 		}
 
-		if ( $action === 'read' && $allowReadForAllInSearchResult ) {
-			// We are on Special:Search page, and read text snipped allowed for all
-			return true;
-		}
-		if (  $action === 'read' && RequestContext::getMain()->getTitle()->isSpecial( 'Search' ) ) {
+		if ( $action === 'read' && RequestContext::getMain()->getTitle()->isSpecial( 'Search' ) ) {
 			$action = 'search';
 		}
 

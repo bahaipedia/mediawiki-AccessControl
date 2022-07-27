@@ -145,7 +145,7 @@ class AccessControlHooks {
 		$status = self::canUserDoAction( $user, $tagContentArray, $actionName );
 		if ( !$status->getValue() ) {
 			// User has no access
-			$parserOutput->setText( wfMessage( 'accesscontrol-info-box' )->text() );
+			$parserOutput->setText( wfMessage( 'accesscontrol-info-box', $parserOutput->getTitleText() )->parse() );
 		}
 		if ( !$status->isGood() ) {
 			$text = $parserOutput->getRawText();
@@ -353,7 +353,7 @@ class AccessControlHooks {
 		$tagContentArray = self::getRestrictionForTitle( $title, $user );
 		$isAllowed = self::canUserDoAction( $user, $tagContentArray, $action )->getValue();
 		if ( !$isAllowed ) {
-			$result = 'accesscontrol-info-box';
+			$result = [ 'accesscontrol-info-box', $title->getFullText() ];
 		}
 
 		return $isAllowed;

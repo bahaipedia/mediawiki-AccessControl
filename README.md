@@ -11,3 +11,5 @@ also I replaced code that looks for accesscontrol tags because there is simpler 
 $wgAccessControlAllowTextSnippetInSearchResultsForAll (if set to false page content is hidden in search results)
 
 Requires wfLoadExtension('AccessControl'); to be set in LocalSettings.php
+
+Run update.php after instillation for the table to be added to the database.

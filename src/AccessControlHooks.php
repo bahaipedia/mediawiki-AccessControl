@@ -434,23 +434,23 @@ class AccessControlHooks {
 
 		$db = wfGetDB( DB_MASTER );
 		$index = [
-			self::C_PAGE => $pageId,
+    			self::C_PAGE => $pageId,
 		];
 		$row = [
-			self::C_PAGE => $pageId,
-			self::C_TAG_CONTENT => $tagContentArray,
+    			self::C_TAG_CONTENT => $tagContentArray,
 		];
 		try {
-			$db->upsert(
-				self::TABLE,
-				[ $index + $row ],
-				[[ self::C_PAGE ]],
-				$row,
-				__METHOD__
-			);
+    			$db->upsert(
+        			self::TABLE,
+        			[ $index + $row ],
+        			[ self::C_PAGE ],
+        			$row,
+        		__METHOD__
+    		);
 		} catch ( Exception $e ) {
-			MWDebug::warning( $e->getMessage() );
+    			MWDebug::warning( $e->getMessage() );
 		}
+
 	}
 
 	/**

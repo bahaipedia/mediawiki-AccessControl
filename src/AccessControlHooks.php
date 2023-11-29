@@ -444,7 +444,7 @@ class AccessControlHooks {
 			$db->upsert(
 				self::TABLE,
 				[ $index + $row ],
-				[ self::C_PAGE ],
+				[[ self::C_PAGE ]],
 				$row,
 				__METHOD__
 			);

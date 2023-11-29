@@ -445,7 +445,7 @@ class AccessControlHooks {
         			[ $index + $row ],
         			[ self::C_PAGE ],
         			$row,
-        		__METHOD__
+        	__METHOD__
     		);
 		} catch ( Exception $e ) {
     			MWDebug::warning( $e->getMessage() );

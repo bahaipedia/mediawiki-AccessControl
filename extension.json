@@ -34,7 +34,8 @@
 		"ParserFirstCallInit": "AccessControlHooks::accessControlExtension",
 		"OutputPageParserOutput": "AccessControlHooks::onOutputPageParserOutput",
 		"LinksUpdate": "AccessControlHooks::onLinksUpdate",
-		"LoadExtensionSchemaUpdates": "AccessControlHooks::onLoadExtensionSchemaUpdates"
+		"LoadExtensionSchemaUpdates": "AccessControlHooks::onLoadExtensionSchemaUpdates",
+		"ShowSearchHit": "AccessControlHooks::onShowSearchHit"
 	},
 	"manifest_version": 2
 }

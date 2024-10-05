@@ -20,7 +20,7 @@ class AccessControlHooks {
 	 * @phan-var array<string,bool>
 	 *
 	 * Format: [ 'pageName1' => true, ... ]
-	 * This is only used of $wgAccessControlAllowTextSnippetInSearchResultsForAll is true,
+	 * This is only used if $wgAccessControlAllowTextSnippetInSearchResultsForAll is true,
 	 * which allows restricted pages to appear in search results.
 	 *
 	 * This array will contain the list of all restricted pages (which current user can't read)

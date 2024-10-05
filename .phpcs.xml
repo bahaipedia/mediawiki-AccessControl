@@ -5,4 +5,9 @@
 	<arg name="extensions" value="php,php5,inc" />
 	<arg name="encoding" value="utf8" />
 	<exclude-pattern>vendor</exclude-pattern>
+
+	<rule ref="./vendor/mediawiki/mediawiki-codesniffer/MediaWiki">
+		<!-- FIXME: changing lines with this warning requires rigorous testing -->
+		<exclude name="Generic.CodeAnalysis.RequireExplicitBooleanOperatorPrecedence.MissingParentheses" />
+	</rule>
 </ruleset>

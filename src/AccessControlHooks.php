@@ -9,7 +9,24 @@ class AccessControlHooks {
 	private const C_PAGE = 'ac_page_id';
 	private const C_TAG_CONTENT = 'ac_tag_content';
 
+	/**
+	 * @var array
+	 * @phan-var array<string,mixed>
+	 */
 	private static $cache = [];
+
+	/**
+	 * @var array
+	 * @phan-var array<string,bool>
+	 *
+	 * Format: [ 'pageName1' => true, ... ]
+	 * This is only used of $wgAccessControlAllowTextSnippetInSearchResultsForAll is true,
+	 * which allows restricted pages to appear in search results.
+	 *
+	 * This array will contain the list of all restricted pages (which current user can't read)
+	 * that were just shown to current user in the search results.
+	 */
+	private static $restrictedSearchResults = [];
 
 	/**
 	 * @see https://www.mediawiki.org/wiki/Manual:Hooks/ParserFirstCallInit
@@ -50,14 +67,9 @@ class AccessControlHooks {
 	 * @throws MWException
 	 */
 	private static function canUserDoAction( User $user, ?array $tagContentArray, string $actionName ): Status {
-		static $allowReadForAllInSearchResult = null;
-
-		if ( $allowReadForAllInSearchResult === null ) {
-			$allowReadForAllInSearchResult = (bool)self::getConfigValue( 'AccessControlAllowTextSnippetInSearchResultsForAll' );
-		}
-
 		// Return true by default
 		$return = Status::newGood( true );
+		$nosearch = false;
 
 		if ( $tagContentArray ) {
 			// For backward compatibility
@@ -68,9 +80,8 @@ class AccessControlHooks {
 
 			$i = array_search( '(nosearch)', $tagContentArray, true );
 			if ( $i !== false ) {
+				$nosearch = true;
 				array_splice( $tagContentArray, $i, 1 );
-			} elseif ( $actionName === 'search' && $allowReadForAllInSearchResult ) {
-				return $return;
 			}
 		}
 
@@ -113,8 +124,17 @@ class AccessControlHooks {
 			return $return;
 		}
 
-		if ( $actionName === 'search' && $searchAccess ) {
-			return $return;
+		if ( $actionName === 'search' ) {
+			if ( $searchAccess ) {
+				// Allowed.
+				return $return;
+			}
+
+			if ( $nosearch ) {
+				// Inform the caller that $wgAccessControlAllowTextSnippetInSearchResultsForAll
+				// should be ignored for this page.
+				$return->warning( 'accesscontrol-nosearch' );
+			}
 		}
 
 		if ( $readAccess ) {
@@ -351,12 +371,54 @@ class AccessControlHooks {
 		}
 
 		$tagContentArray = self::getRestrictionForTitle( $title, $user );
-		$isAllowed = self::canUserDoAction( $user, $tagContentArray, $action )->getValue();
+		$status = self::canUserDoAction( $user, $tagContentArray, $action );
+		$isAllowed = $status->getValue();
+
+		// Special handling for search.
+		if ( !$isAllowed && $action === 'search' &&
+			self::getConfigValue( 'AccessControlAllowTextSnippetInSearchResultsForAll' ) &&
+			!$status->hasMessage( 'accesscontrol-nosearch' )
+		) {
+			// If $wgAccessControlAllowTextSnippetInSearchResultsForAll is true (default: false),
+			// then permission errors won't prevent this page from being shown in search results.
+			// However, we might want to style these restricted results differently (in ShowSearchHit hook).
+			self::$restrictedSearchResults[$title->getFullText()] = true;
+			return true;
+		}
+
 		if ( !$isAllowed ) {
 			$result = [ 'accesscontrol-info-box', $title->getRootText() ];
 		}
 
 		return $isAllowed;
+	}
+
+	/**
+	 * @param SpecialSearch $searchPage
+	 * @param SearchResult $result
+	 * @param string[] $terms
+	 * @param string &$link
+	 * @param string &$redirect
+	 * @param string &$section
+	 * @param string &$extract
+	 * @param string &$score
+	 * @param string &$size
+	 * @param string &$date
+	 * @param string &$related
+	 * @param string &$html
+	 * @return bool|void
+	 */
+	public static function onShowSearchHit( $searchPage, $result, $terms, &$link,
+		&$redirect, &$section, &$extract, &$score, &$size, &$date, &$related, &$html
+	) {
+		$pageName = $result->getTitle()->getFullText();
+		if ( isset( self::$restrictedSearchResults[$pageName] ) ) {
+			// User can see this page in search results, but is not allowed to read it.
+			// Add a CSS class, so that these restricted results can be styled differently.
+			$link = Xml::tags( 'span', [ 'class' => 'mw-ac-restricted-search-result' ], $link );
+		}
+
+		return true;
 	}
 
 	/**
@@ -434,23 +496,22 @@ class AccessControlHooks {
 
 		$db = wfGetDB( DB_MASTER );
 		$index = [
-    			self::C_PAGE => $pageId,
+			self::C_PAGE => $pageId,
 		];
 		$row = [
-    			self::C_TAG_CONTENT => $tagContentArray,
+			self::C_TAG_CONTENT => $tagContentArray,
 		];
 		try {
-    			$db->upsert(
-        			self::TABLE,
-        			[ $index + $row ],
-        			[[ self::C_PAGE ]],
-        			$row,
-        	__METHOD__
-    		);
+			$db->upsert(
+				self::TABLE,
+				[ $index + $row ],
+				[ [ self::C_PAGE ] ],
+				$row,
+			__METHOD__
+			);
 		} catch ( Exception $e ) {
-    			MWDebug::warning( $e->getMessage() );
+			MWDebug::warning( $e->getMessage() );
 		}
-
 	}
 
 	/**

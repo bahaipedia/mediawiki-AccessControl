@@ -43,12 +43,11 @@ class AccessControlHooks {
 	/**
 	 * Function called by accessControlExtension
 	 * @param string $input
-	 * @param string[] $args
+	 * @param string[] $args @phan-unused-param
 	 * @param Parser $parser
-	 * @param PPFrame $frame
 	 * @return string
 	 */
-	public static function doControlUserAccess( string $input, array $args, Parser $parser, PPFrame $frame ) {
+	public static function doControlUserAccess( string $input, array $args, Parser $parser ) {
 		$parserOutput = $parser->getOutput();
 		$data = $parserOutput->getExtensionData( self::TAG_CONTENT_ARRAY ) ?: [];
 		$inputArray = explode( ',', $input );
@@ -395,9 +394,9 @@ class AccessControlHooks {
 	}
 
 	/**
-	 * @param SpecialSearch $searchPage
+	 * @param SpecialSearch $searchPage @phan-unused-param
 	 * @param SearchResult $result
-	 * @param string[] $terms
+	 * @param string[] $terms @phan-unused-param
 	 * @param string &$link
 	 * @param string &$redirect
 	 * @param string &$section

@@ -1,5 +1,6 @@
 <?php
 
+use MediaWiki\Content\TextContent;
 use MediaWiki\Deferred\LinksUpdate\LinksUpdate;
 use MediaWiki\MediaWikiServices;
 
@@ -302,8 +303,13 @@ class AccessControlHooks {
 		}
 
 		$groupPage = MediaWikiServices::getInstance()->getWikiPageFactory()->newFromLinkTarget( $gt );
-		$allowedUsers = ContentHandler::getContentText( $groupPage->getContent() );
+		$content = $groupPage->getContent();
+		if ( !( $content instanceof TextContent ) ) {
+			// Non-text page, treat it as empty.
+			return Status::newGood( [] );
+		}
 
+		$allowedUsers = $content->getText();
 		$usersAccess = explode( "\n", $allowedUsers );
 		foreach ( $usersAccess as $userEntry ) {
 			$userItem = trim( $userEntry );

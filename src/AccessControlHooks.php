@@ -448,7 +448,7 @@ class AccessControlHooks {
 			return self::$cache[$pageId];
 		}
 
-		$dbr = wfGetDB( DB_REPLICA );
+		$dbr = MediaWikiServices::getInstance()->getConnectionProvider()->getReplicaDatabase();
 		try {
 			$row = $dbr->selectRow(
 				self::TABLE,
@@ -494,7 +494,7 @@ class AccessControlHooks {
 			$tagContentArray = FormatJson::encode( $tagContentArray );
 		}
 
-		$db = wfGetDB( DB_MASTER );
+		$db = MediaWikiServices::getInstance()->getConnectionProvider()->getPrimaryDatabase();
 		$index = [
 			self::C_PAGE => $pageId,
 		];

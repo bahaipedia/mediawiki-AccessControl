@@ -1,5 +1,7 @@
 <?php
 
+use MediaWiki\Content\TextContent;
+use MediaWiki\Deferred\LinksUpdate\LinksUpdate;
 use MediaWiki\MediaWikiServices;
 
 class AccessControlHooks {
@@ -11,7 +13,7 @@ class AccessControlHooks {
 
 	/**
 	 * @var array
-	 * @phan-var array<string,mixed>
+	 * @phan-var array<string|int,?mixed>
 	 */
 	private static $cache = [];
 
@@ -20,7 +22,7 @@ class AccessControlHooks {
 	 * @phan-var array<string,bool>
 	 *
 	 * Format: [ 'pageName1' => true, ... ]
-	 * This is only used of $wgAccessControlAllowTextSnippetInSearchResultsForAll is true,
+	 * This is only used if $wgAccessControlAllowTextSnippetInSearchResultsForAll is true,
 	 * which allows restricted pages to appear in search results.
 	 *
 	 * This array will contain the list of all restricted pages (which current user can't read)
@@ -42,12 +44,11 @@ class AccessControlHooks {
 	/**
 	 * Function called by accessControlExtension
 	 * @param string $input
-	 * @param string[] $args
+	 * @param string[] $args @phan-unused-param
 	 * @param Parser $parser
-	 * @param PPFrame $frame
 	 * @return string
 	 */
-	public static function doControlUserAccess( string $input, array $args, Parser $parser, PPFrame $frame ) {
+	public static function doControlUserAccess( string $input, array $args, Parser $parser ) {
 		$parserOutput = $parser->getOutput();
 		$data = $parserOutput->getExtensionData( self::TAG_CONTENT_ARRAY ) ?: [];
 		$inputArray = explode( ',', $input );
@@ -90,11 +91,12 @@ class AccessControlHooks {
 			return $return;
 		}
 
-		if ( self::getConfigValue( 'AdminCanReadAll' ) &&
-			in_array( 'sysop', $user->getGroups(), true )
-		) {
-			// Admin can read all
-			return $return;
+		if ( self::getConfigValue( 'AdminCanReadAll' ) ) {
+			$ugm = MediaWikiServices::getInstance()->getUserGroupManager();
+			if ( in_array( 'sysop', $ugm->listAllGroups() ) ) {
+				// Admin can read all
+				return $return;
+			}
 		}
 
 		$userName = $user->isAnon() ? '*' : $user->getName();
@@ -165,12 +167,14 @@ class AccessControlHooks {
 		$status = self::canUserDoAction( $user, $tagContentArray, $actionName );
 		if ( !$status->getValue() ) {
 			// User has no access
-			$parserOutput->setText( wfMessage( 'accesscontrol-info-box', $parserOutput->getRootText() )->parse() );
+			$parserOutput->setRawText(
+				$out->msg( 'accesscontrol-info-box', $out->getTitle()->getRootText() )->parse()
+			);
 		}
 		if ( !$status->isGood() ) {
 			$text = $parserOutput->getRawText();
-			$text = Html::rawElement( 'div', [ 'class' => 'error' ], $status->getHTML() ) . "\n$text";
-			$parserOutput->setText( $text );
+			$text = Html::rawElement( 'div', [ 'class' => 'error' ], $status->getMessage()->escaped() ) . "\n$text";
+			$parserOutput->setRawText( $text );
 		}
 	}
 
@@ -299,11 +303,15 @@ class AccessControlHooks {
 		if ( !$gt->exists() ) {
 			return Status::newFatal( 'accesscontrol-group-does-not-exist', $gt->getFullText() );
 		}
-		// Article::fetchContent() is deprecated.
-		// Replaced by WikiPage::getContent()
-		$groupPage = WikiPage::factory( $gt );
-		$allowedUsers = ContentHandler::getContentText( $groupPage->getContent() );
-		$groupPage = null;
+
+		$groupPage = MediaWikiServices::getInstance()->getWikiPageFactory()->newFromLinkTarget( $gt );
+		$content = $groupPage->getContent();
+		if ( !( $content instanceof TextContent ) ) {
+			// Non-text page, treat it as empty.
+			return Status::newGood( [] );
+		}
+
+		$allowedUsers = $content->getText();
 		$usersAccess = explode( "\n", $allowedUsers );
 		foreach ( $usersAccess as $userEntry ) {
 			$userItem = trim( $userEntry );
@@ -394,9 +402,9 @@ class AccessControlHooks {
 	}
 
 	/**
-	 * @param SpecialSearch $searchPage
+	 * @param SpecialSearch $searchPage @phan-unused-param
 	 * @param SearchResult $result
-	 * @param string[] $terms
+	 * @param string[] $terms @phan-unused-param
 	 * @param string &$link
 	 * @param string &$redirect
 	 * @param string &$section
@@ -448,7 +456,7 @@ class AccessControlHooks {
 			return self::$cache[$pageId];
 		}
 
-		$dbr = wfGetDB( DB_REPLICA );
+		$dbr = MediaWikiServices::getInstance()->getConnectionProvider()->getReplicaDatabase();
 		try {
 			$row = $dbr->selectRow(
 				self::TABLE,
@@ -494,7 +502,7 @@ class AccessControlHooks {
 			$tagContentArray = FormatJson::encode( $tagContentArray );
 		}
 
-		$db = wfGetDB( DB_MASTER );
+		$db = MediaWikiServices::getInstance()->getConnectionProvider()->getPrimaryDatabase();
 		$index = [
 			self::C_PAGE => $pageId,
 		];

@@ -90,11 +90,12 @@ class AccessControlHooks {
 			return $return;
 		}
 
-		if ( self::getConfigValue( 'AdminCanReadAll' ) &&
-			in_array( 'sysop', $user->getGroups(), true )
-		) {
-			// Admin can read all
-			return $return;
+		if ( self::getConfigValue( 'AdminCanReadAll' ) ) {
+			$ugm = MediaWikiServices::getInstance()->getUserGroupManager();
+			if ( in_array( 'sysop', $ugm->listAllGroups() ) ) {
+				// Admin can read all
+				return $return;
+			}
 		}
 
 		$userName = $user->isAnon() ? '*' : $user->getName();

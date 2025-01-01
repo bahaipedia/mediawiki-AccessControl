@@ -166,7 +166,7 @@ class AccessControlHooks {
 		$status = self::canUserDoAction( $user, $tagContentArray, $actionName );
 		if ( !$status->getValue() ) {
 			// User has no access
-			$parserOutput->setText( wfMessage( 'accesscontrol-info-box', $parserOutput->getRootText() )->parse() );
+			$parserOutput->setText( wfMessage( 'accesscontrol-info-box', $out->getTitle()->getRootText() )->parse() );
 		}
 		if ( !$status->isGood() ) {
 			$text = $parserOutput->getRawText();

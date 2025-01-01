@@ -300,11 +300,10 @@ class AccessControlHooks {
 		if ( !$gt->exists() ) {
 			return Status::newFatal( 'accesscontrol-group-does-not-exist', $gt->getFullText() );
 		}
-		// Article::fetchContent() is deprecated.
-		// Replaced by WikiPage::getContent()
-		$groupPage = WikiPage::factory( $gt );
+
+		$groupPage = MediaWikiServices::getInstance()->getWikiPageFactory()->newFromLinkTarget( $gt );
 		$allowedUsers = ContentHandler::getContentText( $groupPage->getContent() );
-		$groupPage = null;
+
 		$usersAccess = explode( "\n", $allowedUsers );
 		foreach ( $usersAccess as $userEntry ) {
 			$userItem = trim( $userEntry );

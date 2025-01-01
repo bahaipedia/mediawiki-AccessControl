@@ -167,12 +167,14 @@ class AccessControlHooks {
 		$status = self::canUserDoAction( $user, $tagContentArray, $actionName );
 		if ( !$status->getValue() ) {
 			// User has no access
-			$parserOutput->setText( wfMessage( 'accesscontrol-info-box', $out->getTitle()->getRootText() )->parse() );
+			$parserOutput->setRawText(
+				$out->msg( 'accesscontrol-info-box', $out->getTitle()->getRootText() )->parse()
+			);
 		}
 		if ( !$status->isGood() ) {
 			$text = $parserOutput->getRawText();
 			$text = Html::rawElement( 'div', [ 'class' => 'error' ], $status->getHTML() ) . "\n$text";
-			$parserOutput->setText( $text );
+			$parserOutput->setRawText( $text );
 		}
 	}
 

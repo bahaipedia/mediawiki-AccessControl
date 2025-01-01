@@ -11,7 +11,7 @@ class AccessControlHooks {
 
 	/**
 	 * @var array
-	 * @phan-var array<string,mixed>
+	 * @phan-var array<string|int,?mixed>
 	 */
 	private static $cache = [];
 

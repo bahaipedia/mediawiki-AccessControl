@@ -1,5 +1,6 @@
 <?php
 
+use MediaWiki\Deferred\LinksUpdate\LinksUpdate;
 use MediaWiki\MediaWikiServices;
 
 class AccessControlHooks {

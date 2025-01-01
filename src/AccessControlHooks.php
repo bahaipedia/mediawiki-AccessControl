@@ -173,7 +173,7 @@ class AccessControlHooks {
 		}
 		if ( !$status->isGood() ) {
 			$text = $parserOutput->getRawText();
-			$text = Html::rawElement( 'div', [ 'class' => 'error' ], $status->getHTML() ) . "\n$text";
+			$text = Html::rawElement( 'div', [ 'class' => 'error' ], $status->getMessage()->escaped() ) . "\n$text";
 			$parserOutput->setRawText( $text );
 		}
 	}

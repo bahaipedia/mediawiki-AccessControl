@@ -93,7 +93,7 @@ class AccessControlHooks {
 
 		if ( self::getConfigValue( 'AdminCanReadAll' ) ) {
 			$ugm = MediaWikiServices::getInstance()->getUserGroupManager();
-			if ( in_array( 'sysop', $ugm->listAllGroups() ) ) {
+			if ( in_array( 'sysop', $ugm->getUserEffectiveGroups( $user ) ) ) {
 				// Admin can read all
 				return $return;
 			}

@@ -374,7 +374,8 @@ class AccessControlHooks {
 			}
 		}
 
-		if ( $action === 'read' && RequestContext::getMain()->getTitle()->isSpecial( 'Search' ) ) {
+		$currentContextTitle = RequestContext::getMain()->getTitle();
+		if ( $action === 'read' && $currentContextTitle && $currentContextTitle->isSpecial( 'Search' ) ) {
 			$action = 'search';
 		}
 

@@ -29,7 +29,23 @@ class AccessControlHooks {
 	private const C_PAGE = 'ac_page_id';
 	private const C_TAG_CONTENT = 'ac_tag_content';
 
+	/**
+	 * @var array
+	 * @phan-var array<string|int,?mixed>
+	 */
 	private $cache = [];
+
+	/**
+	 * @var array
+	 * @phan-var array<string,bool>
+	 *
+	 * Format: [ 'pageName1' => true, ... ]
+	 * This is only used if $wgAccessControlAllowTextSnippetInSearchResultsForAll is true,
+	 * which allows restricted pages to appear in search results.
+	 *
+	 * This array will contain the list of all restricted pages (which current user can't read)
+	 * that were just shown to current user in the search results.
+	 */
 	private $restrictedSearchResults = [];
 
 	private Config $config;
@@ -52,10 +68,24 @@ class AccessControlHooks {
 		$this->titleFactory = $titleFactory;
 	}
 
+	/**
+	 * @see https://www.mediawiki.org/wiki/Manual:Hooks/ParserFirstCallInit
+	 *
+	 * @param Parser $parser
+	 * @throws \MWException
+	 */
 	public function onParserFirstCallInit( Parser $parser ) {
+		/* This the hook function adds the tag <accesscontrol> to the wiki parser */
 		$parser->setHook( 'accesscontrol', [ $this, 'doControlUserAccess' ] );
 	}
 
+	/**
+	 * Function called by accessControlExtension
+	 * @param string $input
+	 * @param string[] $args @phan-unused-param
+	 * @param Parser $parser
+	 * @return string
+	 */
 	public function doControlUserAccess( string $input, array $args, Parser $parser ) {
 		$parserOutput = $parser->getOutput();
 		$data = $parserOutput->getExtensionData( self::TAG_CONTENT_ARRAY ) ?: [];
@@ -68,11 +98,20 @@ class AccessControlHooks {
 		return $this->displayGroups();
 	}
 
+	/**
+	 * @param User $user
+	 * @param array|null $tagContentArray
+	 * @param string $actionName
+	 * @return Status
+	 * @throws \MWException
+	 */
 	private function canUserDoAction( User $user, ?array $tagContentArray, string $actionName ): Status {
+		// Return true by default
 		$return = Status::newGood( true );
 		$nosearch = false;
 
 		if ( $tagContentArray ) {
+			// For backward compatibility
 			if ( count( $tagContentArray ) === 1 ) {
 				$tagContentArray = explode( ',', $tagContentArray[0] );
 				$tagContentArray = array_map( 'trim', $tagContentArray );
@@ -86,11 +125,13 @@ class AccessControlHooks {
 		}
 
 		if ( !$tagContentArray ) {
+			// No restrictions
 			return $return;
 		}
 
 		if ( $this->config->get( 'AdminCanReadAll' ) ) {
 			if ( in_array( 'sysop', $this->userGroupManager->getUserEffectiveGroups( $user ) ) ) {
+				// Admin can read all
 				return $return;
 			}
 		}
@@ -118,29 +159,42 @@ class AccessControlHooks {
 		}
 
 		if ( $fullAccess ) {
+			// User has full access
 			return $return;
 		}
 
 		if ( $actionName === 'search' ) {
 			if ( $searchAccess ) {
+				// Allowed.
 				return $return;
 			}
 
 			if ( $nosearch ) {
+				// Inform the caller that $wgAccessControlAllowTextSnippetInSearchResultsForAll
+				// should be ignored for this page.
 				$return->warning( 'accesscontrol-nosearch' );
 			}
 		}
 
 		if ( $readAccess ) {
+			// User has read access
 			if ( $actionName === 'view' || $actionName === 'read' ) {
+				// This is view action
 				return $return;
 			}
 		}
 
+		// Return false
 		$return->setResult( true, false );
 		return $return;
 	}
 
+	/**
+	 * Checks page restriction
+	 * @param OutputPage $out
+	 * @param ParserOutput $parserOutput
+	 * @throws \MWException
+	 */
 	public function onOutputPageParserOutput( OutputPage $out, ParserOutput $parserOutput ) {
 		$tagContentArray = $parserOutput->getExtensionData( self::TAG_CONTENT_ARRAY );
 		$user = $out->getUser();
@@ -149,6 +203,7 @@ class AccessControlHooks {
 
 		$status = $this->canUserDoAction( $user, $tagContentArray, $actionName );
 		if ( !$status->getValue() ) {
+			// User has no access
 			$parserOutput->setRawText(
 				$out->msg( 'accesscontrol-info-box', $out->getTitle()->getRootText() )->parse()
 			);
@@ -160,6 +215,11 @@ class AccessControlHooks {
 		}
 	}
 
+	/**
+	 * @param string $accessList
+	 * @return Status
+	 * @throws \MWException
+	 */
 	private function accessControl( string $accessList ): Status {
 		$accessGroup = [ [], [], [] ];
 		$return = Status::newGood();
@@ -205,6 +265,14 @@ class AccessControlHooks {
 		return $return;
 	}
 
+	/**
+	 * Function returns array with two lists.
+	 * First is list full access users.
+	 * Second is list readonly users.
+	 * @param string $accessList
+	 * @return Status
+	 * @throws \MWException
+	 */
 	private function makeGroupArray( string $accessList ): Status {
 		static $cache = [];
 
@@ -241,6 +309,10 @@ class AccessControlHooks {
 		return $status;
 	}
 
+	/**
+	 * Shows info about a protection this the page at the accesscontrol place
+	 * @return string
+	 */
 	private function displayGroups() {
 		$text = wfMessage( 'accesscontrol-info' )->text();
 		$attribs = [
@@ -250,7 +322,13 @@ class AccessControlHooks {
 		return Html::element( 'p', $attribs, $text );
 	}
 
+	/**
+	 * @param string $group
+	 * @return Status
+	 * @throws \MWException
+	 */
 	private function getUsersFromPages( string $group ): Status {
+		/* Extracts the allowed users from the userspace access list */
 		$allow = [];
 		try {
 			$gt = $this->titleFactory->newFromTextThrow( $group );
@@ -266,6 +344,7 @@ class AccessControlHooks {
 		$groupPage = $this->wikiPageFactory->newFromLinkTarget( $gt );
 		$content = $groupPage->getContent();
 		if ( !( $content instanceof TextContent ) ) {
+			// Non-text page, treat it as empty.
 			return Status::newGood( [] );
 		}
 
@@ -289,10 +368,21 @@ class AccessControlHooks {
 		return Status::newGood( $allow );
 	}
 
+	/**
+	 * @see https://www.mediawiki.org/wiki/Manual:Hooks/getUserPermissionsErrors
+	 *
+	 * @param Title $title
+	 * @param User $user
+	 * @param string $action
+	 * @param string &$result
+	 * @return bool
+	 * @throws \MWException
+	 */
 	public function onGetUserPermissionsErrors( Title $title, User $user, $action, &$result ) {
 		static $requestChecked = false;
 
 		if ( !$requestChecked ) {
+			// We need to check this once only
 			$requestChecked = true;
 
 			$context = RequestContext::getMain();
@@ -301,6 +391,7 @@ class AccessControlHooks {
 				$requestUser = $context->getUser();
 				$tagContentArray = $this->getRestrictionForTitle( $requestTitle, $requestUser );
 				if ( !$this->canUserDoAction( $user, $tagContentArray, 'fullAccess' )->getValue() ) {
+					// User has no full access
 					global $wgActions;
 					$wgActions['edit'] = false;
 					$wgActions['history'] = false;
@@ -313,6 +404,7 @@ class AccessControlHooks {
 					$wgActions['rollback'] = false;
 					$wgActions['markpatrolled'] = false;
 					if ( !$this->canUserDoAction( $user, $tagContentArray, 'read' )->getValue() ) {
+						// User has no read access
 						$wgActions['view'] = false;
 					}
 				}
@@ -328,10 +420,14 @@ class AccessControlHooks {
 		$status = $this->canUserDoAction( $user, $tagContentArray, $action );
 		$isAllowed = $status->getValue();
 
+		// Special handling for search.
 		if ( !$isAllowed && $action === 'search' &&
 			$this->config->get( 'AccessControlAllowTextSnippetInSearchResultsForAll' ) &&
 			!$status->hasMessage( 'accesscontrol-nosearch' )
 		) {
+			// If $wgAccessControlAllowTextSnippetInSearchResultsForAll is true (default: false),
+			// then permission errors won't prevent this page from being shown in search results.
+			// However, we might want to style these restricted results differently (in ShowSearchHit hook).
 			$this->restrictedSearchResults[$title->getFullText()] = true;
 			return true;
 		}
@@ -343,17 +439,37 @@ class AccessControlHooks {
 		return $isAllowed;
 	}
 
+	/**
+	 * @param \SpecialSearch $searchPage @phan-unused-param
+	 * @param \SearchResult $result
+	 * @param string[] $terms @phan-unused-param
+	 * @param string &$link
+	 * @param string &$redirect
+	 * @param string &$section
+	 * @param string &$extract
+	 * @param string &$score
+	 * @param string &$size
+	 * @param string &$date
+	 * @param string &$related
+	 * @param string &$html
+	 * @return bool|void
+	 */
 	public function onShowSearchHit( $searchPage, $result, $terms, &$link,
 		&$redirect, &$section, &$extract, &$score, &$size, &$date, &$related, &$html
 	) {
 		$pageName = $result->getTitle()->getFullText();
 		if ( isset( $this->restrictedSearchResults[$pageName] ) ) {
+			// User can see this page in search results, but is not allowed to read it.
+			// Add a CSS class, so that these restricted results can be styled differently.
 			$link = Xml::tags( 'span', [ 'class' => 'mw-ac-restricted-search-result' ], $link );
 		}
 
 		return true;
 	}
 
+	/**
+	 * @param LinksUpdate $linksUpdate
+	 */
 	public function onLinksUpdate( LinksUpdate $linksUpdate ) {
 		$parserOutput = $linksUpdate->getParserOutput();
 		$title = $linksUpdate->getTitle();
@@ -363,6 +479,11 @@ class AccessControlHooks {
 		$this->updateRestrictionInDatabase( $pageId, $tagContentArray );
 	}
 
+	/**
+	 * @param Title $title
+	 * @param User $user
+	 * @return false|array|null
+	 */
 	private function getRestrictionForTitle( Title $title, User $user ) {
 		$pageId = $title->getArticleID();
 		if ( !$pageId ) {
@@ -387,6 +508,7 @@ class AccessControlHooks {
 		}
 
 		if ( !$row ) {
+			// No record in the database
 			$page = new Article( $title );
 			$return = $page->getParserOutput( null, $user )->getExtensionData( self::TAG_CONTENT_ARRAY );
 		} else {
@@ -397,6 +519,10 @@ class AccessControlHooks {
 		return $return;
 	}
 
+	/**
+	 * @param int $pageId
+	 * @param array|null $tagContentArray
+	 */
 	private function updateRestrictionInDatabase( int $pageId, ?array $tagContentArray ) {
 		if ( !$pageId ) {
 			return;
@@ -405,6 +531,7 @@ class AccessControlHooks {
 		if ( array_key_exists( $pageId, $this->cache ) &&
 			$this->cache[$pageId] === $tagContentArray
 		) {
+			// No changes
 			return;
 		}
 		$this->cache[$pageId] = $tagContentArray;
@@ -433,6 +560,11 @@ class AccessControlHooks {
 		}
 	}
 
+	/**
+	 * This is attached to the MediaWiki 'LoadExtensionSchemaUpdates' hook.
+	 * Fired when MediaWiki is updated to allow extensions to update the database
+	 * @param DatabaseUpdater $updater
+	 */
 	public function onLoadExtensionSchemaUpdates( DatabaseUpdater $updater ) {
 		$updater->addExtensionTable( self::TABLE, __DIR__ . '/../db_patches/access_control.sql' );
 	}

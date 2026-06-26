@@ -1,16 +1,13 @@
 <?php
 
-use MediaWiki\Actions\Action;
 use MediaWiki\Config\Config;
 use MediaWiki\Content\TextContent;
 use MediaWiki\Context\RequestContext;
 use MediaWiki\Deferred\LinksUpdate\LinksUpdate;
 use MediaWiki\Html\Html;
-use Xml;
 use MediaWiki\Installer\DatabaseUpdater;
 use MediaWiki\Json\FormatJson;
 use MediaWiki\Output\OutputPage;
-use MediaWiki\Page\Article;
 use MediaWiki\Page\WikiPageFactory;
 use MediaWiki\Parser\Parser;
 use MediaWiki\Parser\ParserOutput;

@@ -6,7 +6,7 @@ use MediaWiki\Content\TextContent;
 use MediaWiki\Context\RequestContext;
 use MediaWiki\Deferred\LinksUpdate\LinksUpdate;
 use MediaWiki\Html\Html;
-use MediaWiki\Html\Xml;
+use Xml;
 use MediaWiki\Installer\DatabaseUpdater;
 use MediaWiki\Json\FormatJson;
 use MediaWiki\Output\OutputPage;

@@ -20,7 +20,7 @@ use MediaWiki\Title\Title;
 use MediaWiki\Title\TitleFactory;
 use MediaWiki\User\User;
 use MediaWiki\User\UserGroupManager;
-use Wikimedia\Rdbms\ConnectionProvider;
+use Wikimedia\Rdbms\IConnectionProvider;
 
 class AccessControlHooks {
 
@@ -50,14 +50,14 @@ class AccessControlHooks {
 
 	private Config $config;
 	private UserGroupManager $userGroupManager;
-	private ConnectionProvider $connectionProvider;
+	private IConnectionProvider $connectionProvider;
 	private WikiPageFactory $wikiPageFactory;
 	private TitleFactory $titleFactory;
 
 	public function __construct(
 		Config $config,
 		UserGroupManager $userGroupManager,
-		ConnectionProvider $connectionProvider,
+		IConnectionProvider $connectionProvider,
 		WikiPageFactory $wikiPageFactory,
 		TitleFactory $titleFactory
 	) {

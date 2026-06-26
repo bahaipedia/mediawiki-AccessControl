@@ -29,13 +29,25 @@
 			"description": "Allow to show text snippet of protected pages in search result even user has no rights to read"
 		}
 	},
+	"HookHandlers": {
+		"AccessControlHooks": {
+			"class": "AccessControlHooks",
+			"services": [
+				"MainConfig",
+				"UserGroupManager",
+				"ConnectionProvider",
+				"WikiPageFactory",
+				"TitleFactory"
+			]
+		}
+	},
 	"Hooks": {
-		"getUserPermissionsErrors": "AccessControlHooks::onGetUserPermissionsErrors",
-		"ParserFirstCallInit": "AccessControlHooks::accessControlExtension",
-		"OutputPageParserOutput": "AccessControlHooks::onOutputPageParserOutput",
-		"LinksUpdate": "AccessControlHooks::onLinksUpdate",
-		"LoadExtensionSchemaUpdates": "AccessControlHooks::onLoadExtensionSchemaUpdates",
-		"ShowSearchHit": "AccessControlHooks::onShowSearchHit"
+		"getUserPermissionsErrors": "AccessControlHooks",
+		"ParserFirstCallInit": "AccessControlHooks",
+		"OutputPageParserOutput": "AccessControlHooks",
+		"LinksUpdate": "AccessControlHooks",
+		"LoadExtensionSchemaUpdates": "AccessControlHooks",
+		"ShowSearchHit": "AccessControlHooks"
 	},
 	"manifest_version": 2
 }

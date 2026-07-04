@@ -556,13 +556,4 @@ class AccessControlHooks {
 			\MWDebug::warning( $e->getMessage() );
 		}
 	}
-
-	/**
-	 * This is attached to the MediaWiki 'LoadExtensionSchemaUpdates' hook.
-	 * Fired when MediaWiki is updated to allow extensions to update the database
-	 * @param DatabaseUpdater $updater
-	 */
-	public function onLoadExtensionSchemaUpdates( DatabaseUpdater $updater ) {
-		$updater->addExtensionTable( self::TABLE, __DIR__ . '/../db_patches/access_control.sql' );
-	}
 }

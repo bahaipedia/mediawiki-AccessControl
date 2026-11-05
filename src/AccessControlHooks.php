@@ -109,6 +109,33 @@ class AccessControlHooks {
 	}
 
 	/**
+	 * Wrap currentRevisionRecordCallback so Scribunto's mw.title.new():getContent()
+	 * cannot read restricted pages when the user lacks read permission.
+	 *
+	 * @see https://www.mediawiki.org/wiki/Manual:Hooks/ParserOptionsRegister
+	 *
+	 * @param array &$defaults
+	 * @param array &$inCacheKey
+	 * @param array &$lazyLoad
+	 */
+	public function onParserOptionsRegister( &$defaults, &$inCacheKey, &$lazyLoad ) {
+		$originalCallback = $defaults['currentRevisionRecordCallback']
+			?? [ Parser::class, 'statelessFetchRevisionRecord' ];
+
+		$defaults['currentRevisionRecordCallback'] = function ( LinkTarget $link, $parser = null ) use ( $originalCallback ) {
+			$targetTitle = $this->titleFactory->newFromLinkTarget( $link );
+			if ( $targetTitle && $targetTitle->exists() ) {
+				$user = RequestContext::getMain()->getUser();
+				$tagContentArray = $this->getRestrictionForTitle( $targetTitle, $user );
+				if ( !$this->canUserDoAction( $user, $tagContentArray, 'read' )->getValue() ) {
+					return false;
+				}
+			}
+			return $originalCallback( $link, $parser );
+		};
+	}
+
+	/**
 	 * Function called by accessControlExtension
 	 * @param string $input
 	 * @param string[] $args @phan-unused-param

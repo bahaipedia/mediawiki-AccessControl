@@ -49,6 +49,7 @@
 		"getUserPermissionsErrors": "AccessControlHooks",
 		"ParserFirstCallInit": "AccessControlHooks",
 		"BeforeParserFetchTemplateRevisionRecord": "AccessControlHooks",
+		"ParserOptionsRegister": "AccessControlHooks",
 		"OutputPageParserOutput": "AccessControlHooks",
 		"LinksUpdate": "AccessControlHooks",
 		"LoadExtensionSchemaUpdates": "AccessControlInstallHooks",

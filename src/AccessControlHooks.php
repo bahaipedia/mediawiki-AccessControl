@@ -78,8 +78,9 @@ class AccessControlHooks {
 	}
 
 	/**
-	 * Prevent Scribunto (mw.title.new():getContent()) and partial transclusions
-	 * from fetching the revision content of restricted pages when the user lacks read access.
+	 * Prevent template and page transclusions (including partial transclusions
+	 * via <onlyinclude> or <noinclude>) from fetching the revision content of
+	 * restricted pages when the user lacks read access.
 	 *
 	 * @see https://www.mediawiki.org/wiki/Manual:Hooks/BeforeParserFetchTemplateRevisionRecord
 	 *

@@ -6,10 +6,12 @@ use MediaWiki\Context\RequestContext;
 use MediaWiki\Deferred\LinksUpdate\LinksUpdate;
 use MediaWiki\Html\Html;
 use MediaWiki\Json\FormatJson;
+use MediaWiki\Linker\LinkTarget;
 use MediaWiki\Output\OutputPage;
 use MediaWiki\Page\WikiPageFactory;
 use MediaWiki\Parser\Parser;
 use MediaWiki\Parser\ParserOutput;
+use MediaWiki\Revision\RevisionRecord;
 use MediaWiki\Status\Status;
 use MediaWiki\Title\MalformedTitleException;
 use MediaWiki\Title\Title;
@@ -73,6 +75,37 @@ class AccessControlHooks {
 	public function onParserFirstCallInit( Parser $parser ) {
 		/* This the hook function adds the tag <accesscontrol> to the wiki parser */
 		$parser->setHook( 'accesscontrol', [ $this, 'doControlUserAccess' ] );
+	}
+
+	/**
+	 * Prevent Scribunto (mw.title.new():getContent()) and partial transclusions
+	 * from fetching the revision content of restricted pages when the user lacks read access.
+	 *
+	 * @see https://www.mediawiki.org/wiki/Manual:Hooks/BeforeParserFetchTemplateRevisionRecord
+	 *
+	 * @param ?LinkTarget $contextTitle
+	 * @param LinkTarget $title
+	 * @param bool &$skip
+	 * @param ?RevisionRecord &$revRecord
+	 * @return bool|void
+	 */
+	public function onBeforeParserFetchTemplateRevisionRecord(
+		?LinkTarget $contextTitle,
+		LinkTarget $title,
+		bool &$skip,
+		?RevisionRecord &$revRecord
+	) {
+		$targetTitle = $this->titleFactory->newFromLinkTarget( $title );
+		if ( !$targetTitle->exists() ) {
+			return;
+		}
+
+		$user = RequestContext::getMain()->getUser();
+		$tagContentArray = $this->getRestrictionForTitle( $targetTitle, $user );
+		if ( !$this->canUserDoAction( $user, $tagContentArray, 'read' )->getValue() ) {
+			$skip = true;
+			return false;
+		}
 	}
 
 	/**

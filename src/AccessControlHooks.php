@@ -136,12 +136,12 @@ class AccessControlHooks {
 	 * handling of [[File:...]].
 	 *
 	 * @param Parser $parser
-	 * @param Title &$nt @phan-unused-param
+	 * @param Title $nt @phan-unused-param
 	 * @param array &$options @phan-unused-param
 	 * @param string &$descQuery @phan-unused-param
 	 * @return bool|void
 	 */
-	public function onBeforeParserFetchFileAndTitle( $parser, &$nt, &$options, &$descQuery ) {
+	public function onBeforeParserFetchFileAndTitle( $parser, $nt, &$options, &$descQuery ) {
 		$this->currentParserTitle = $parser->getTitle();
 	}
 

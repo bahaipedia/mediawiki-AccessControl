@@ -13,7 +13,11 @@
 	},
 	"AutoloadClasses": {
 		"AccessControlHooks": "src/AccessControlHooks.php",
-		"AccessControlInstallHooks": "src/AccessControlInstallHooks.php"
+		"AccessControlInstallHooks": "src/AccessControlInstallHooks.php",
+		"AccessControlApiQueryImageInfo": "src/AccessControlApiQueryImageInfo.php",
+		"AccessControlApiQueryAllImages": "src/AccessControlApiQueryAllImages.php",
+		"AccessControlPdfHandler": "src/AccessControlPdfHandler.php",
+		"AccessControlGroupPermissionsLookup": "src/AccessControlGroupPermissionsLookup.php"
 	},
 	"MessagesDirs": {
 		"AccessControl": [
@@ -49,11 +53,18 @@
 		"getUserPermissionsErrors": "AccessControlHooks",
 		"ParserFirstCallInit": "AccessControlHooks",
 		"BeforeParserFetchTemplateRevisionRecord": "AccessControlHooks",
+		"BeforeParserFetchFileAndTitle": "AccessControlHooks",
+		"ParserAfterTidy": "AccessControlHooks",
 		"ParserOptionsRegister": "AccessControlHooks",
 		"OutputPageParserOutput": "AccessControlHooks",
 		"LinksUpdate": "AccessControlHooks",
 		"LoadExtensionSchemaUpdates": "AccessControlInstallHooks",
-		"ShowSearchHit": "AccessControlHooks"
+		"MediaWikiServices": "AccessControlInstallHooks",
+		"ShowSearchHit": "AccessControlHooks",
+		"ApiQuery::moduleManager": "AccessControlHooks",
+		"BitmapHandlerTransform": "AccessControlHooks",
+		"LinkerMakeMediaLinkFile": "AccessControlHooks",
+		"SpecialPageBeforeExecute": "AccessControlHooks"
 	},
 	"manifest_version": 2
 }

@@ -21,7 +21,6 @@ if (
  * when the current user lacks read permission for the File: page or when a
  * restricted PDF is being transformed in an unrestricted page parse context.
  *
- * @phan-suppress-next-line PhanUndeclaredExtendedClass
  */
 class AccessControlPdfHandler extends PdfHandler {
 
@@ -37,11 +36,9 @@ class AccessControlPdfHandler extends PdfHandler {
 		if ( !AccessControlHooks::getInstance()->canTransformFile( $image, $params ) ) {
 			$width = (int)( $params['width'] ?? 0 );
 			$height = (int)( $params['height'] ?? 0 );
-			// @phan-suppress-next-line PhanUndeclaredMethod
 			return $this->doThumbError( $width, $height, 'badaccess-group0' );
 		}
 
-		// @phan-suppress-next-line PhanUndeclaredClass
 		return parent::doTransform( $image, $dstPath, $dstUrl, $params, $flags );
 	}
 }

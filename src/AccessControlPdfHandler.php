@@ -41,7 +41,7 @@ class AccessControlPdfHandler extends PdfHandler {
 			return $this->doThumbError( $width, $height, 'badaccess-group0' );
 		}
 
-		// @phan-suppress-next-line PhanUndeclaredMethod
+		// @phan-suppress-next-line PhanUndeclaredClass
 		return parent::doTransform( $image, $dstPath, $dstUrl, $params, $flags );
 	}
 }

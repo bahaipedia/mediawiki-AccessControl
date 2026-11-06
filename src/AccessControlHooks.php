@@ -1,17 +1,24 @@
 <?php
 
+use MediaWiki\Api\ApiModuleManager;
 use MediaWiki\Config\Config;
 use MediaWiki\Content\TextContent;
 use MediaWiki\Context\RequestContext;
 use MediaWiki\Deferred\LinksUpdate\LinksUpdate;
+use MediaWiki\Exception\PermissionsError;
+use MediaWiki\FileRepo\File\File;
 use MediaWiki\Html\Html;
 use MediaWiki\Json\FormatJson;
 use MediaWiki\Linker\LinkTarget;
+use MediaWiki\Media\MediaTransformError;
+use MediaWiki\MediaWikiServices;
 use MediaWiki\Output\OutputPage;
 use MediaWiki\Page\WikiPageFactory;
+use MediaWiki\Parser\CoreParserFunctions;
 use MediaWiki\Parser\Parser;
 use MediaWiki\Parser\ParserOutput;
 use MediaWiki\Revision\RevisionRecord;
+use MediaWiki\SpecialPage\SpecialPage;
 use MediaWiki\Status\Status;
 use MediaWiki\Title\MalformedTitleException;
 use MediaWiki\Title\Title;
@@ -26,6 +33,9 @@ class AccessControlHooks {
 	private const TABLE = 'access_control';
 	private const C_PAGE = 'ac_page_id';
 	private const C_TAG_CONTENT = 'ac_tag_content';
+
+	private static ?self $instance = null;
+	private ?Title $currentParserTitle = null;
 
 	/**
 	 * @var array
@@ -64,6 +74,26 @@ class AccessControlHooks {
 		$this->connectionProvider = $connectionProvider;
 		$this->wikiPageFactory = $wikiPageFactory;
 		$this->titleFactory = $titleFactory;
+		self::$instance = $this;
+	}
+
+	/**
+	 * Return the active AccessControlHooks instance, constructing one from MediaWikiServices if needed.
+	 *
+	 * @return self
+	 */
+	public static function getInstance(): self {
+		if ( self::$instance === null ) {
+			$services = MediaWikiServices::getInstance();
+			self::$instance = new self(
+				$services->getMainConfig(),
+				$services->getUserGroupManager(),
+				$services->getConnectionProvider(),
+				$services->getWikiPageFactory(),
+				$services->getTitleFactory()
+			);
+		}
+		return self::$instance;
 	}
 
 	/**
@@ -75,6 +105,75 @@ class AccessControlHooks {
 	public function onParserFirstCallInit( Parser $parser ) {
 		/* This the hook function adds the tag <accesscontrol> to the wiki parser */
 		$parser->setHook( 'accesscontrol', [ $this, 'doControlUserAccess' ] );
+		$parser->setFunctionHook( 'filepath', [ $this, 'onFilepathParserFunction' ], Parser::SFH_NO_HASH );
+	}
+
+	/**
+	 * Guard {{filepath:...}} so restricted File: pages cannot have their original S3 URL
+	 * or thumbnail URL exposed (or rendered) unless the current user has read access and,
+	 * when parsed on another page, the embedding page has matching <accesscontrol> restrictions.
+	 *
+	 * @param Parser $parser
+	 * @param string $name
+	 * @param string $argA
+	 * @param string $argB
+	 * @return array|string
+	 */
+	public function onFilepathParserFunction( Parser $parser, $name = '', $argA = '', $argB = '' ) {
+		$file = MediaWikiServices::getInstance()->getRepoGroup()->findFile( $name );
+		if ( $file && $file->getTitle() ) {
+			if ( !$this->canEmbedOrTransformFile( $file->getTitle(), $parser->getTitle() ) ) {
+				return '';
+			}
+		}
+
+		return CoreParserFunctions::filepath( $parser, $name, $argA, $argB );
+	}
+
+	/**
+	 * Track the page currently being parsed so <gallery>, [[Media:...]], and MediaHandler
+	 * transforms know the embedding article context without breaking AControlImageLink's
+	 * handling of [[File:...]].
+	 *
+	 * @param Parser $parser
+	 * @param Title &$nt @phan-unused-param
+	 * @param array &$options @phan-unused-param
+	 * @param string &$descQuery @phan-unused-param
+	 * @return bool|void
+	 */
+	public function onBeforeParserFetchFileAndTitle( $parser, &$nt, &$options, &$descQuery ) {
+		$this->currentParserTitle = $parser->getTitle();
+	}
+
+	/**
+	 * Clear the tracked parser title when parsing finishes.
+	 *
+	 * @param Parser $parser @phan-unused-param
+	 * @param string &$text @phan-unused-param
+	 * @return bool|void
+	 */
+	public function onParserAfterTidy( $parser, &$text ) {
+		$this->currentParserTitle = null;
+	}
+
+	/**
+	 * Prevent [[Media:Restricted.pdf]] from outputting the raw S3 URL on an unrestricted
+	 * page or to an unauthorized user; point to the File: description page instead.
+	 *
+	 * @param Title $title
+	 * @param File|bool $file
+	 * @param string &$html @phan-unused-param
+	 * @param array &$attribs
+	 * @param string &$ret @phan-unused-param
+	 * @return bool|void
+	 */
+	public function onLinkerMakeMediaLinkFile( $title, $file, &$html, &$attribs, &$ret ) {
+		$fileTitle = ( $file instanceof File && $file->getTitle() ) ? $file->getTitle() : $title;
+		if ( $fileTitle && $fileTitle->inNamespace( NS_FILE ) ) {
+			if ( !$this->canEmbedOrTransformFile( $fileTitle, $this->currentParserTitle ) ) {
+				$attribs['href'] = $fileTitle->getLocalURL();
+			}
+		}
 	}
 
 	/**
@@ -116,14 +215,17 @@ class AccessControlHooks {
 	 * @see https://www.mediawiki.org/wiki/Manual:Hooks/ParserOptionsRegister
 	 *
 	 * @param array &$defaults
-	 * @param array &$inCacheKey
-	 * @param array &$lazyLoad
+	 * @param array &$inCacheKey @phan-unused-param
+	 * @param array &$lazyLoad @phan-unused-param
 	 */
 	public function onParserOptionsRegister( &$defaults, &$inCacheKey, &$lazyLoad ) {
 		$originalCallback = $defaults['currentRevisionRecordCallback']
 			?? [ Parser::class, 'statelessFetchRevisionRecord' ];
 
-		$defaults['currentRevisionRecordCallback'] = function ( LinkTarget $link, $parser = null ) use ( $originalCallback ) {
+		$defaults['currentRevisionRecordCallback'] = function (
+			LinkTarget $link,
+			$parser = null
+		) use ( $originalCallback ) {
 			$targetTitle = $this->titleFactory->newFromLinkTarget( $link );
 			if ( $targetTitle && $targetTitle->exists() ) {
 				$user = RequestContext::getMain()->getUser();
@@ -566,14 +668,275 @@ class AccessControlHooks {
 
 		if ( !$row ) {
 			// No record in the database
-			$page = new Article( $title );
-			$return = $page->getParserOutput( null, $user )->getExtensionData( self::TAG_CONTENT_ARRAY );
+			if ( $this->currentParserTitle !== null ) {
+				$return = $this->extractRestrictionFromRawText( $title );
+			} else {
+				try {
+					$page = new Article( $title );
+					$parserOutput = $page->getParserOutput( null, $user );
+					$return = $parserOutput
+						? $parserOutput->getExtensionData( self::TAG_CONTENT_ARRAY )
+						: $this->extractRestrictionFromRawText( $title );
+				} catch ( \Throwable ) {
+					$return = $this->extractRestrictionFromRawText( $title );
+				}
+			}
 		} else {
 			$tagContent = ( (array)$row )[self::C_TAG_CONTENT];
 			$return = $tagContent ? FormatJson::decode( $tagContent, true ) : null;
 		}
 		$this->cache[$pageId] = $return;
 		return $return;
+	}
+
+	/**
+	 * Extract <accesscontrol> tag groups directly from the raw revision text of a Title.
+	 *
+	 * @param Title $title
+	 * @return array|null
+	 */
+	private function extractRestrictionFromRawText( Title $title ): ?array {
+		if ( !$title->exists() ) {
+			return null;
+		}
+		$wikiPage = $this->wikiPageFactory->newFromLinkTarget( $title );
+		$content = $wikiPage->getContent( RevisionRecord::RAW );
+		if ( !( $content instanceof TextContent ) ) {
+			return null;
+		}
+		$matches = [];
+		if ( !preg_match_all( '/<accesscontrol\b[^>]*>(.*?)<\/accesscontrol>/is', $content->getText(), $matches ) ) {
+			return null;
+		}
+		$data = [];
+		foreach ( $matches[1] as $input ) {
+			$inputArray = array_map( 'trim', explode( ',', $input ) );
+			$data = array_merge( $data, $inputArray );
+		}
+		$data = array_values( array_unique( array_filter( $data, static function ( $item ) {
+			return $item !== '';
+		} ) ) );
+		return $data ?: null;
+	}
+
+	/**
+	 * Check whether the given user has 'read' permission for the given Title under AccessControl.
+	 *
+	 * @param Title $title
+	 * @param User $user
+	 * @return bool
+	 */
+	public function userCanReadTitle( Title $title, User $user ): bool {
+		if ( !$title->exists() ) {
+			return true;
+		}
+		$tagContentArray = $this->getRestrictionForTitle( $title, $user );
+		return (bool)$this->canUserDoAction( $user, $tagContentArray, 'read' )->getValue();
+	}
+
+	/**
+	 * Normalize a restriction array for comparison between a File: page and an embedding article.
+	 *
+	 * @param array|null $restrictions
+	 * @return array
+	 */
+	private function normalizeRestrictionArray( ?array $restrictions ): array {
+		if ( !$restrictions ) {
+			return [];
+		}
+		if ( count( $restrictions ) === 1 ) {
+			$restrictions = explode( ',', $restrictions[0] );
+		}
+		$restrictions = array_values( array_unique( array_filter(
+			array_map( 'trim', $restrictions ),
+			static function ( $item ) {
+				return $item !== '';
+			}
+		) ) );
+		sort( $restrictions );
+		return $restrictions;
+	}
+
+	/**
+	 * Determine whether a File: page can be embedded/transformed in the current context.
+	 *
+	 * - Outside a wiki page parse ($contextTitle is null), the current user must have 'read'
+	 *   access to $fileTitle.
+	 * - During a wiki page parse ($contextTitle is a page other than $fileTitle), if $fileTitle
+	 *   is restricted by <accesscontrol>, the current user must have 'read' access AND
+	 *   $contextTitle must have the same <accesscontrol> restrictions (preventing admin parses
+	 *   of public pages from generating S3 thumbnails or caching restricted URLs in ParserCache).
+	 *
+	 * @param Title $fileTitle
+	 * @param Title|null $contextTitle
+	 * @return bool
+	 */
+	public function canEmbedOrTransformFile( Title $fileTitle, ?Title $contextTitle = null ): bool {
+		if ( !$fileTitle->exists() ) {
+			return true;
+		}
+
+		$user = RequestContext::getMain()->getUser();
+		$fileRestrictions = $this->getRestrictionForTitle( $fileTitle, $user );
+		if ( !$fileRestrictions ) {
+			$fileRestrictions = $this->extractRestrictionFromRawText( $fileTitle );
+		}
+		if ( !$fileRestrictions ) {
+			return true;
+		}
+
+		if ( !$this->canUserDoAction( $user, $fileRestrictions, 'read' )->getValue() ) {
+			return false;
+		}
+
+		if ( $contextTitle && !$contextTitle->equals( $fileTitle ) ) {
+			$articleRestrictions = $this->getRestrictionForTitle( $contextTitle, $user );
+			if ( !$articleRestrictions ) {
+				$articleRestrictions = $this->extractRestrictionFromRawText( $contextTitle );
+			}
+			if (
+				$this->normalizeRestrictionArray( $articleRestrictions ) !==
+				$this->normalizeRestrictionArray( $fileRestrictions )
+			) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Check whether $image is allowed to be transformed (thumbnailed).
+	 *
+	 * @param File $image
+	 * @param array $params
+	 * @return bool
+	 */
+	public function canTransformFile( File $image, array $params = [] ): bool {
+		$fileTitle = $image->getTitle();
+		if ( !$fileTitle ) {
+			return true;
+		}
+
+		$contextTitle = $this->currentParserTitle;
+		if ( $contextTitle === null && ( $params['requestProvenance'] ?? null ) === 'parser' ) {
+			$contextTitle = RequestContext::getMain()->getTitle();
+		}
+
+		return $this->canEmbedOrTransformFile( $fileTitle, $contextTitle );
+	}
+
+	/**
+	 * Override prop=imageinfo and list=allimages with AccessControl-aware subclasses.
+	 *
+	 * @see https://www.mediawiki.org/wiki/Manual:Hooks/ApiQuery::moduleManager
+	 *
+	 * @param ApiModuleManager $moduleManager
+	 * @return bool|void
+	 */
+	public function onApiQuery__moduleManager( $moduleManager ) {
+		$moduleManager->addModule(
+			'imageinfo',
+			'prop',
+			[
+				'class' => AccessControlApiQueryImageInfo::class,
+				'services' => [
+					'RepoGroup',
+					'ContentLanguage',
+					'BadFileLookup',
+				],
+			]
+		);
+
+		$moduleManager->addModule(
+			'allimages',
+			'list',
+			[
+				'class' => AccessControlApiQueryAllImages::class,
+				'services' => [
+					'RepoGroup',
+					'GroupPermissionsLookup',
+				],
+			]
+		);
+	}
+
+	/**
+	 * Prevent TransformationalImageHandler from transforming restricted bitmap/SVG files
+	 * when the user is unauthorized or in an unrestricted page parse context.
+	 *
+	 * @see https://www.mediawiki.org/wiki/Manual:Hooks/BitmapHandlerTransform
+	 *
+	 * @param \TransformationalImageHandler $handler @phan-unused-param
+	 * @param File $image
+	 * @param array &$scalerParams
+	 * @param ?\MediaTransformOutput &$mto
+	 * @return bool|void
+	 */
+	public function onBitmapHandlerTransform( $handler, $image, &$scalerParams, &$mto ) {
+		if ( !$this->canTransformFile( $image, $scalerParams ) ) {
+			$mto = new MediaTransformError(
+				'thumbnail_error',
+				(int)( $scalerParams['clientWidth'] ?? 0 ),
+				(int)( $scalerParams['clientHeight'] ?? 0 ),
+				wfMessage( 'badaccess-group0' )
+			);
+			return false;
+		}
+	}
+
+	/**
+	 * Prevent Special:Redirect/file/... (and Special:Redirect/page/..., Special:Redirect/revision/...)
+	 * from transforming or redirecting to restricted files/pages when the user lacks read access.
+	 *
+	 * @see https://www.mediawiki.org/wiki/Manual:Hooks/SpecialPageBeforeExecute
+	 *
+	 * @param SpecialPage $special
+	 * @param string|null $subPage
+	 * @return bool|void
+	 * @throws PermissionsError
+	 */
+	public function onSpecialPageBeforeExecute( $special, $subPage ) {
+		if ( $special->getName() !== 'Redirect' ) {
+			return;
+		}
+
+		$parts = $subPage !== null ? explode( '/', $subPage, 2 ) : [];
+		$type = $parts[0] ?? null;
+		$value = $parts[1] ?? null;
+
+		$request = $special->getRequest();
+		if ( !$type ) {
+			$type = $request->getVal( 'wpType', $request->getVal( 'type' ) );
+		}
+		if ( $value === null || $value === '' ) {
+			$value = $request->getVal( 'wpValue', $request->getVal( 'value' ) );
+		}
+
+		if ( !$type || $value === null || $value === '' ) {
+			return;
+		}
+
+		$targetTitle = null;
+		if ( $type === 'file' ) {
+			$targetTitle = $this->titleFactory->newFromText( $value, NS_FILE );
+			if ( $targetTitle && !$targetTitle->inNamespace( NS_FILE ) ) {
+				$targetTitle = $this->titleFactory->newFromText( Title::makeName( NS_FILE, $value ) );
+			}
+		} elseif ( $type === 'page' && ctype_digit( (string)$value ) ) {
+			$targetTitle = $this->titleFactory->newFromID( (int)$value );
+		} elseif ( $type === 'revision' && ctype_digit( (string)$value ) ) {
+			$revRecord = MediaWikiServices::getInstance()
+				->getRevisionLookup()
+				->getRevisionById( (int)$value );
+			if ( $revRecord ) {
+				$targetTitle = $this->titleFactory->newFromPageIdentity( $revRecord->getPage() );
+			}
+		}
+
+		if ( $targetTitle && !$this->userCanReadTitle( $targetTitle, $special->getUser() ) ) {
+			throw new PermissionsError( 'read', [ 'badaccess-group0' ] );
+		}
 	}
 
 	/**

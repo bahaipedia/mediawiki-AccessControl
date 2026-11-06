@@ -9,12 +9,12 @@ env:
 jobs:
   # PHP linters: phpcs, parallel-lint, etc.
   linter:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
         with:
-            php-version: '8.1'
+            php-version: '8.3'
             tools: composer
       - uses: actions/cache@v4
         with:
@@ -25,14 +25,14 @@ jobs:
 
   # Phan (PHP static analyzer)
   phan:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     env:
-      branch: REL1_43
+      branch: REL1_46
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
         with:
-            php-version: '8.1'
+            php-version: '8.3'
             extensions: ast
             tools: composer
       - uses: actions/cache@v4

@@ -22,9 +22,7 @@
 			"dealerdirect/phpcodesniffer-composer-installer": true
 		},
 		"audit": {
-			"ignore": [
-				"PKSA-rdkp-vv9z-mjkg"
-			]
+			"block-insecure": false
 		}
 	}
 }

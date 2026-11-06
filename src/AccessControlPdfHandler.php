@@ -30,25 +30,6 @@ class AccessControlPdfHandler extends PdfHandler {
 	 * @param string $dstPath
 	 * @param string $dstUrl
 	 * @param array $params
-	 * @return MediaTransformError|MediaTransformOutput|ThumbnailImage|TransformParameterError
-	 */
-	public function getTransform( $image, $dstPath, $dstUrl, $params ) {
-		if ( !AccessControlHooks::getInstance()->canTransformFile( $image, $params ) ) {
-			$width = (int)( $params['width'] ?? 0 );
-			$height = (int)( $params['height'] ?? 0 );
-			// @phan-suppress-next-line PhanUndeclaredMethod
-			return $this->doThumbError( $width, $height, 'badaccess-group0' );
-		}
-
-		// @phan-suppress-next-line PhanUndeclaredMethod
-		return parent::getTransform( $image, $dstPath, $dstUrl, $params );
-	}
-
-	/**
-	 * @param File $image
-	 * @param string $dstPath
-	 * @param string $dstUrl
-	 * @param array $params
 	 * @param int $flags
 	 * @return MediaTransformError|MediaTransformOutput|ThumbnailImage|TransformParameterError
 	 */

@@ -834,6 +834,7 @@ class AccessControlHooks {
 	 * @param ApiModuleManager $moduleManager
 	 * @return bool|void
 	 */
+	// phpcs:ignore MediaWiki.NamingConventions.LowerCamelFunctionsName.FunctionName
 	public function onApiQuery__moduleManager( $moduleManager ) {
 		$moduleManager->addModule(
 			'imageinfo',
